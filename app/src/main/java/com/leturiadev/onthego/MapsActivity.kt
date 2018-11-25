@@ -36,7 +36,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     private var api = "AIzaSyAGb_sS6_DZiONRvbrkcUxBVJL-SrRfLjY "
     private var url = "https://maps.googleapis.com/maps/api/directions/"
     private var destinashon = "-8.106131, -79.021151"
-    var pos
+    lateinit var pos:LatLng
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
