@@ -2,6 +2,7 @@ package com.leturiadev.onthego
 
 
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.location.Address
 import android.location.Location
 import android.support.v7.app.AppCompatActivity
@@ -27,8 +28,12 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CustomCap
 import android.location.Geocoder
 import com.android.volley.Request
+import com.android.volley.RequestQueue
 import com.android.volley.Response
 import com.android.volley.toolbox.JsonObjectRequest
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
+import com.google.maps.android.PolyUtil
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.Exception
@@ -39,10 +44,10 @@ import kotlin.collections.ArrayList
 class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolylineClickListener {
 
     override fun onPolylineClick(p: Polyline) {
-       var type = p.tag
+        var type = p.tag
         when (type) {
             "C" ->
-              Toast.makeText(this, "Rutas Micro C", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Rutas Micro C", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -50,7 +55,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
 
     private var destinashon = "-8.106131,-79.021151"
 
-    private lateinit var pasos : ArrayList<LatLng>
+    private lateinit var  requestQueue : RequestQueue
 
     //Location
     private lateinit var  fusedLocationClient : FusedLocationProviderClient
@@ -58,6 +63,8 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
     private val COLOR_ORANGE_ARGB = -0xa80e9
 
     private lateinit var txtCalle : TextView
+    private lateinit var txtTiempo : TextView
+    private lateinit var txtDistancia : TextView
 
     lateinit var pos:LatLng
 
@@ -71,7 +78,9 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
         }
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
+        txtCalle = findViewById(R.id.txtCalle)
+        txtTiempo = findViewById(R.id.txtTiempo)
+        txtDistancia = findViewById(R.id.txtDistancia)
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         val mapFragment = supportFragmentManager
@@ -80,10 +89,11 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
     }
 
     private fun setUpMap(){
+
         if(ActivityCompat.checkSelfPermission(this,
                 android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,
-            arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), 1)
+                arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), 1)
             return
         }
         mMap.isMyLocationEnabled = true
@@ -94,15 +104,21 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
 
                 mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(pos,13f))
 
-                try {
-                    val jsonObjectRequest = JsonObjectRequest(
-                        Request.Method.GET, "https://maps.googleapis.com/maps/api/geocode/json?latlng="+location.latitude +","+location.longitude+"&key=AIzaSyC0miOfNBZL4Fr-IUEiQNV3YTozgTkv8Pc", null,
-                        Response.Listener { response ->
 
-                            val resultsArray = response.getJSONArray("results")
+                requestQueue= Volley.newRequestQueue(this)
+
+
+
+                try {
+                    val stringRequest = StringRequest(
+                        Request.Method.GET, "https://maps.googleapis.com/maps/api/geocode/json?latlng="+location.latitude+","+location.longitude+"&key=AIzaSyC0miOfNBZL4Fr-IUEiQNV3YTozgTkv8Pc",
+                        Response.Listener { response ->
+                            val obj = JSONObject(response)
+
+                            val resultsArray = obj.getJSONArray("results")
                             val result = resultsArray.getJSONObject(0)
-                            val direccion = result.getJSONObject("formatted_address")
-                            txtCalle.text = direccion.toString()
+                            val direccion = result.getString("formatted_address")
+                            txtCalle.text = direccion
 
                         },
                         Response.ErrorListener { error ->
@@ -110,56 +126,51 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
                         }
                     )
 
+                    val requestQueue1 = Volley.newRequestQueue(this)
+                    requestQueue1.add<String>(stringRequest)
+
                 }catch (x : Exception){
-                    Toast.makeText(this, "Ubicacion no encontrada", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, x.toString(), Toast.LENGTH_LONG).show()
                 }
+
+
+
                 try {
-                    val jsonObjectRequest = JsonObjectRequest(
-                        Request.Method.GET, "https://maps.googleapis.com/maps/api/directions/json?origin="+location.latitude +","+location.longitude +"&destination="+destinashon+" &key=AIzaSyC0miOfNBZL4Fr-IUEiQNV3YTozgTkv8Pc", null,
+                    val path: MutableList<List<LatLng>> = ArrayList()
+                    var stringrequest2 = StringRequest(
+                        Request.Method.GET, "https://maps.googleapis.com/maps/api/directions/json?origin="+location.latitude +","+location.longitude +"&destination="+destinashon+"&key=AIzaSyC0miOfNBZL4Fr-IUEiQNV3YTozgTkv8Pc",
                         Response.Listener { response ->
 
-                            val routesArray = response.getJSONArray("routes")
-                            val route = routesArray.getJSONObject(0)
-                            val legs = route.getJSONArray("legs")
-                            val leg = legs.getJSONObject(0)
-                            val legsObject = leg.keys()
+                            val jsonResponse = JSONObject(response)
+                            // Get routes
+                            val routes = jsonResponse.getJSONArray("routes")
+                            val legs = routes.getJSONObject(0).getJSONArray("legs")
+                            val distancia = legs.getJSONObject(0).getJSONObject("distance").getString("value")
+                            val akm = (distancia.toDouble()/1000)
+                            txtDistancia.text = ""+ akm + " Km."
+                            val tiempo = legs.getJSONObject(0).getJSONObject("duration").getString("text")
+                            txtTiempo.text = tiempo
+                            val steps = legs.getJSONObject(0).getJSONArray("steps")
 
-                            while (legsObject.hasNext())
-                            {
-                                val key = legsObject.next()
-                                val legsite = leg.getJSONObject(key)
-                                val legdata1 = legsite.getJSONArray("start_location")
-                                val legdataRecorriod1 = legdata1.getJSONObject(0)
-                                val legdataRecStar1 = legdataRecorriod1.getJSONObject("lat")
-                                val legdataRecEnd1 = legdataRecorriod1.getJSONObject("lng")
-
-                                val star1double = legdataRecStar1.toString()
-                                val end1double = legdataRecEnd1.toString()
-
-                                val legdata2 = legsite.getJSONArray("end_location")
-                                val legdataRecorriod2 = legdata2.getJSONObject(0)
-                                val legdataRecStar2 = legdataRecorriod2.getJSONObject("lat")
-                                val legdataRecEnd2 = legdataRecorriod2.getJSONObject("lng")
-
-                                val star2double = legdataRecStar2.toString()
-                                val end2double = legdataRecEnd2.toString()
-
-                                pasos.add(LatLng(star1double.toDouble(),end1double.toDouble()))
-                                pasos.add(LatLng(star2double.toDouble(),end2double.toDouble()))
-
+                            for (i in 0 until steps.length()) {
+                                val points = steps.getJSONObject(i).getJSONObject("polyline").getString("points")
+                                path.add(PolyUtil.decode(points))
+                            }
+                            for (i in 0 until path.size) {
+                                mMap!!.addPolyline(PolylineOptions().addAll(path[i]).color(Color.RED))
                             }
 
-
                         },
                         Response.ErrorListener { error ->
                             Toast.makeText(this, "Error JSON", Toast.LENGTH_LONG).show()
                         }
                     )
-
+                    val requestQueue2 = Volley.newRequestQueue(this)
+                    requestQueue2.add<String>(stringrequest2)
                 }catch (x : Exception){
-                    Toast.makeText(this, "Ubicacion no encontrada", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, x.toString(), Toast.LENGTH_LONG).show()
                 }
-                }
+            }
         }
     }
 
@@ -167,6 +178,10 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
+
+
+        setUpMap()
+
 
         val microC = googleMap.addPolyline(
             PolylineOptions()
@@ -212,15 +227,11 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
                     LatLng(-8.116305, -79.030021)
                 )
         )
-        mMap.setOnPolylineClickListener(this)
-        microC.setTag("C");
 
-        val route  = googleMap.addPolyline(
-        PolylineOptions()
-            .addAll(pasos)
-            .clickable(true))
-        
-        setUpMap()
+
+        mMap.setOnPolylineClickListener(this)
+        microC.setTag("C")
+
     }
 
 
