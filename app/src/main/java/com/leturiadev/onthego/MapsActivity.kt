@@ -1,7 +1,9 @@
 package com.leturiadev.onthego
 
 
-import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Address
+import android.location.Location
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 
@@ -13,29 +15,50 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
 import kotlinx.android.synthetic.main.activity_maps.*
 import com.google.android.gms.maps.model.PolylineOptions
-import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
-import android.os.Build
-import android.support.v4.content.ContextCompat
-import android.util.Log
+import android.support.v4.app.ActivityCompat
+import android.widget.TextView
 import android.widget.Toast
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.model.Polyline
+import com.google.android.gms.maps.model.RoundCap
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CustomCap
+import android.location.Geocoder
+import com.android.volley.Request
+import com.android.volley.Response
+import com.android.volley.toolbox.JsonObjectRequest
+import org.json.JSONArray
+import org.json.JSONObject
+import java.lang.Exception
+import java.util.*
+import kotlin.collections.ArrayList
 
 
-class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
+class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolylineClickListener {
+
+    override fun onPolylineClick(p: Polyline) {
+       var type = p.tag
+        when (type) {
+            "C" ->
+              Toast.makeText(this, "Rutas Micro C", Toast.LENGTH_LONG).show()
+        }
+    }
 
     private lateinit var mMap: GoogleMap
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var locManager:LocationManager
 
-    private var locationManager : LocationManager? = null
+    private var destinashon = "-8.106131,-79.021151"
 
-    private var api = "AIzaSyAGb_sS6_DZiONRvbrkcUxBVJL-SrRfLjY "
-    private var url = "https://maps.googleapis.com/maps/api/directions/"
-    private var destinashon = "-8.106131, -79.021151"
+    private lateinit var pasos : ArrayList<LatLng>
+
+    //Location
+    private lateinit var  fusedLocationClient : FusedLocationProviderClient
+    private lateinit var lastLocation : Location
+    private val COLOR_ORANGE_ARGB = -0xa80e9
+
+    private lateinit var txtCalle : TextView
+
     lateinit var pos:LatLng
 
 
@@ -47,16 +70,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             onBackPressed()
         }
 
-        // Create persistent LocationManager reference
-        locationManager = getSystemService(LOCATION_SERVICE) as LocationManager?;
-            pos = LatLng (99999.99, 99999.99)
-
-            try {
-                // Request location updates
-                locationManager?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0L, 0f, locationListener);
-            } catch(ex: SecurityException) {
-                Log.d("myTag", "Security Exception, no location available");
-            }
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
@@ -65,43 +79,102 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         mapFragment.getMapAsync(this)
     }
 
-    //define the listener
-    private val locationListener: LocationListener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            pos = LatLng(location.longitude,location.latitude)
+    private fun setUpMap(){
+        if(ActivityCompat.checkSelfPermission(this,
+                android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+            arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), 1)
+            return
         }
-        override fun onStatusChanged(provider: String, status: Int, extras: Bundle) {}
-        override fun onProviderEnabled(provider: String) {}
-        override fun onProviderDisabled(provider: String) {}
+        mMap.isMyLocationEnabled = true
+        fusedLocationClient.lastLocation.addOnSuccessListener(this){location ->
+            if(location != null){
+                lastLocation = location
+                pos = LatLng(location.latitude,location.longitude)
+
+                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(pos,13f))
+
+                try {
+                    val jsonObjectRequest = JsonObjectRequest(
+                        Request.Method.GET, "https://maps.googleapis.com/maps/api/geocode/json?latlng="+location.latitude +","+location.longitude+"&key=AIzaSyC0miOfNBZL4Fr-IUEiQNV3YTozgTkv8Pc", null,
+                        Response.Listener { response ->
+
+                            val resultsArray = response.getJSONArray("results")
+                            val result = resultsArray.getJSONObject(0)
+                            val direccion = result.getJSONObject("formatted_address")
+                            txtCalle.text = direccion.toString()
+
+                        },
+                        Response.ErrorListener { error ->
+                            Toast.makeText(this, "Error JSON", Toast.LENGTH_LONG).show()
+                        }
+                    )
+
+                }catch (x : Exception){
+                    Toast.makeText(this, "Ubicacion no encontrada", Toast.LENGTH_LONG).show()
+                }
+                try {
+                    val jsonObjectRequest = JsonObjectRequest(
+                        Request.Method.GET, "https://maps.googleapis.com/maps/api/directions/json?origin="+location.latitude +","+location.longitude +"&destination="+destinashon+" &key=AIzaSyC0miOfNBZL4Fr-IUEiQNV3YTozgTkv8Pc", null,
+                        Response.Listener { response ->
+
+                            val routesArray = response.getJSONArray("routes")
+                            val route = routesArray.getJSONObject(0)
+                            val legs = route.getJSONArray("legs")
+                            val leg = legs.getJSONObject(0)
+                            val legsObject = leg.keys()
+
+                            while (legsObject.hasNext())
+                            {
+                                val key = legsObject.next()
+                                val legsite = leg.getJSONObject(key)
+                                val legdata1 = legsite.getJSONArray("start_location")
+                                val legdataRecorriod1 = legdata1.getJSONObject(0)
+                                val legdataRecStar1 = legdataRecorriod1.getJSONObject("lat")
+                                val legdataRecEnd1 = legdataRecorriod1.getJSONObject("lng")
+
+                                val star1double = legdataRecStar1.toString()
+                                val end1double = legdataRecEnd1.toString()
+
+                                val legdata2 = legsite.getJSONArray("end_location")
+                                val legdataRecorriod2 = legdata2.getJSONObject(0)
+                                val legdataRecStar2 = legdataRecorriod2.getJSONObject("lat")
+                                val legdataRecEnd2 = legdataRecorriod2.getJSONObject("lng")
+
+                                val star2double = legdataRecStar2.toString()
+                                val end2double = legdataRecEnd2.toString()
+
+                                pasos.add(LatLng(star1double.toDouble(),end1double.toDouble()))
+                                pasos.add(LatLng(star2double.toDouble(),end2double.toDouble()))
+
+                            }
+
+
+                        },
+                        Response.ErrorListener { error ->
+                            Toast.makeText(this, "Error JSON", Toast.LENGTH_LONG).show()
+                        }
+                    )
+
+                }catch (x : Exception){
+                    Toast.makeText(this, "Ubicacion no encontrada", Toast.LENGTH_LONG).show()
+                }
+                }
+        }
     }
 
 
-    /**
-     * Manipulates the map once available.
-     * This callback is triggered when the map is ready to be used.
-     * This is where we can add markers or lines, add listeners or move the camera. In this case,
-     * we just add a marker near Sydney, Australia.
-     * If Google Play services is not installed on the device, the user will be prompted to install
-     * it inside the SupportMapFragment. This method will only be triggered once the user has
-     * installed Google Play services and returned to the app.
-     */
+
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
 
-        // Add a marker in Sydney and move the camera
-        if(pos == LatLng (99999.99, 99999.99)) {
-            val sydney = pos;
-
-            mMap.addMarker(MarkerOptions().position(sydney).title("Mi posicion :V"))
-            mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney))
-        }
-
-        val polyline1 = googleMap.addPolyline(
+        val microC = googleMap.addPolyline(
             PolylineOptions()
                 .clickable(true)
+                .color(COLOR_ORANGE_ARGB)
                 .add(
                     LatLng(-8.116305, -79.030021),
-                    LatLng(-8.116544, -79.029624),
+                    LatLng(-8.116544,   -79.029624),
                     LatLng(-8.116592, -79.028551),
                     LatLng(-8.116358, -79.026856),
                     LatLng(-8.116309, -79.026406),
@@ -139,9 +212,16 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
                     LatLng(-8.116305, -79.030021)
                 )
         )
+        mMap.setOnPolylineClickListener(this)
+        microC.setTag("C");
 
-
-
-
+        val route  = googleMap.addPolyline(
+        PolylineOptions()
+            .addAll(pasos)
+            .clickable(true))
+        
+        setUpMap()
     }
+
+
 }
