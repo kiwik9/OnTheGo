@@ -232,6 +232,8 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, GoogleMap.OnPolyli
         mMap.setOnPolylineClickListener(this)
         microC.setTag("C")
 
+
+
     }
 
 
